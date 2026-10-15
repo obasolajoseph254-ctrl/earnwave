@@ -1,0 +1,86 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EarnWave | Earn. Learn. Grow.</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:Arial,sans-serif;background:#f1f5f9;color:#172033}
+header{background:#073b2a;color:white;padding:25px 18px}
+header h1{margin:0;color:#62f5ad}
+header p{margin-bottom:0}
+main{max-width:750px;margin:25px auto;padding:16px}
+.card{background:white;padding:20px;border-radius:15px;margin-bottom:16px;box-shadow:0 3px 12px #0000000b}
+.balance{background:#0b6845;color:white}
+.balance h2{font-size:30px;margin:10px 0}
+button{background:#087f5b;color:white;border:0;border-radius:8px;padding:12px 16px;font-weight:bold;cursor:pointer}
+.task{display:flex;justify-content:space-between;align-items:center;gap:12px}
+.small{font-size:13px;color:#64748b}
+footer{text-align:center;padding:25px;color:#64748b}
+</style>
+</head>
+<body>
+<header>
+<h1>EarnWave 🌊</h1>
+<p>Earn. Learn. Grow.</p>
+</header>
+<main>
+<div class="card balance">
+<p>YOUR DEMO POINTS</p>
+<h2 id="points">0 points</h2>
+<p>Complete sample tasks to collect demo points.</p>
+</div>
+
+<div class="card">
+<h3>Available Tasks</h3>
+<div class="task">
+<div><b>Explore EarnWave</b><p class="small">View your dashboard.</p></div>
+<button onclick="completeTask('explore',50,this)">+50 points</button>
+</div>
+<hr>
+<div class="task">
+<div><b>Daily Learning</b><p class="small">Read a learning tip.</p></div>
+<button onclick="completeTask('learn',30,this)">+30 points</button>
+</div>
+<hr>
+<div class="task">
+<div><b>Website Feedback</b><p class="small">Tell us what can improve.</p></div>
+<button onclick="completeTask('feedback',20,this)">+20 points</button>
+</div>
+</div>
+
+<div class="card">
+<h3>Premium Membership</h3>
+<p>Proposed price: ₦500/month.</p>
+<p class="small">Premium benefits and payment terms must be finalised before launch. This demo does not collect payments.</p>
+<button onclick="alert('Premium is not yet available. No payment has been taken.')">View Premium</button>
+</div>
+
+<div class="card">
+<h3>Withdrawals</h3>
+<p class="small">Demo only. Points have no cash value, and no money is sent.</p>
+<button onclick="alert('Real withdrawals are not enabled on this demo.')">Withdrawal Information</button>
+</div>
+<p class="small">EarnWave demo • No real payments, deposits, or cash rewards.</p>
+</main>
+<footer>EarnWave © 2026</footer>
+<script>
+let points=0;
+let completed=[];
+function completeTask(id,value,button){
+ if(completed.includes(id)){
+  alert("You have completed this demo task already.");
+  return;
+ }
+ completed.push(id);
+ points+=value;
+ document.getElementById("points").textContent=points+" points";
+ button.textContent="Completed";
+ button.disabled=true;
+ button.style.opacity="0.6";
+}
+</script>
+</body>
+</html>
