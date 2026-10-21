@@ -25,6 +25,8 @@ input{width:100%;padding:12px;margin:8px 0;border:1px solid #cbd5e1;border-radiu
 .hidden{display:none !important}
 .logout-btn{background:#ef4444;padding:8px 12px;font-size:14px;width:auto;margin:0}
 .error{color:#ef4444;font-size:14px;margin-top:10px}
+.success{color:#087f5b;font-size:14px;margin-top:10px;font-weight:bold}
+.link-text{color:#0f172a;font-size:14px;text-align:center;cursor:pointer;margin-top:15px;text-decoration:underline;}
 </style>
 </head>
 <body>
@@ -37,16 +39,19 @@ input{width:100%;padding:12px;margin:8px 0;border:1px solid #cbd5e1;border-radiu
 </header>
 
 <main>
+<!-- AUTH SCREEN -->
 <div id="auth-screen" class="card">
 <h3>Welcome to EarnWave</h3>
 <p class="small">Sign in or create an account to start earning demo points.</p>
 <input type="email" id="email" placeholder="Email address">
 <input type="password" id="password" placeholder="Password (min 6 characters)">
-<div id="auth-error" class="error"></div>
+<div id="auth-message" class="error"></div>
 <button id="login-btn" onclick="login()">Log In</button>
 <button id="signup-btn" onclick="signup()" style="background:#0f172a">Create Account</button>
+<p class="link-text" onclick="forgotPassword()">Forgot Password?</p>
 </div>
 
+<!-- DASHBOARD SCREEN -->
 <div id="dashboard-screen" class="hidden">
 <div class="card balance">
 <p>YOUR DEMO POINTS</p>
@@ -130,10 +135,11 @@ function showDashboard() {
 async function signup() {
   const email = document.getElementById('email').value;
   const password = document.getElementById('password').value;
-  const errorDiv = document.getElementById('auth-error');
-  errorDiv.textContent = "";
+  const msgDiv = document.getElementById('auth-message');
+  msgDiv.className = "error";
+  msgDiv.textContent = "";
   
-  if(!email || !password) { errorDiv.textContent = "Please enter email and password."; return; }
+  if(!email || !password) { msgDiv.textContent = "Please enter email and password."; return; }
   
   document.getElementById('signup-btn').textContent = "Creating...";
   
@@ -142,7 +148,7 @@ async function signup() {
   document.getElementById('signup-btn').textContent = "Create Account";
   
   if (error) {
-    errorDiv.textContent = error.message;
+    msgDiv.textContent = error.message;
   } else {
     if(data.session) {
       currentUser = data.user;
@@ -156,10 +162,11 @@ async function signup() {
 async function login() {
   const email = document.getElementById('email').value;
   const password = document.getElementById('password').value;
-  const errorDiv = document.getElementById('auth-error');
-  errorDiv.textContent = "";
+  const msgDiv = document.getElementById('auth-message');
+  msgDiv.className = "error";
+  msgDiv.textContent = "";
   
-  if(!email || !password) { errorDiv.textContent = "Please enter email and password."; return; }
+  if(!email || !password) { msgDiv.textContent = "Please enter email and password."; return; }
   
   document.getElementById('login-btn').textContent = "Logging in...";
   
@@ -168,10 +175,35 @@ async function login() {
   document.getElementById('login-btn').textContent = "Log In";
   
   if (error) {
-    errorDiv.textContent = error.message;
+    msgDiv.textContent = error.message;
   } else {
     currentUser = data.user;
     showDashboard();
+  }
+}
+
+// NEW: Forgot Password Function
+async function forgotPassword() {
+  const email = document.getElementById('email').value;
+  const msgDiv = document.getElementById('auth-message');
+  msgDiv.className = "error";
+  msgDiv.textContent = "";
+
+  if(!email) { 
+    msgDiv.textContent = "Please type your email address in the box above first, then tap Forgot Password."; 
+    return; 
+  }
+
+  const { data, error } = await supabaseClient.auth.resetPasswordForEmail(email, {
+    redirectTo: window.location.origin + window.location.pathname
+  });
+
+  if (error) {
+    msgDiv.className = "error";
+    msgDiv.textContent = error.message;
+  } else {
+    msgDiv.className = "success";
+    msgDiv.textContent = "Password reset link sent! Check your email.";
   }
 }
 
