@@ -4,7 +4,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>EarnWave | Earn. Learn. Grow.</title>
-<!-- Supabase Connection -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 *{box-sizing:border-box}
@@ -23,6 +22,7 @@ button:disabled{background:#94a3b8;cursor:not-allowed}
 .small{font-size:13px;color:#64748b}
 footer{text-align:center;padding:25px;color:#64748b}
 input{width:100%;padding:12px;margin:8px 0;border:1px solid #cbd5e1;border-radius:8px;font-size:16px}
+/* THIS IS THE FIX: We force the hidden class to hide things */
 .hidden{display:none !important}
 .logout-btn{background:#ef4444;padding:8px 12px;font-size:14px;width:auto;margin:0}
 .error{color:#ef4444;font-size:14px;margin-top:10px}
@@ -34,11 +34,11 @@ input{width:100%;padding:12px;margin:8px 0;border:1px solid #cbd5e1;border-radiu
 <h1>EarnWave 🌊</h1>
 <p>Earn. Learn. Grow.</p>
 </div>
-<button id="logout-btn" class="logout-btn hidden" onclick="logout()">Logout</button>
+<button id="logout-btn" class="hidden" onclick="logout()">Logout</button>
 </header>
 
 <main>
-<!-- AUTH SCREEN (Shows when logged out) -->
+<!-- AUTH SCREEN -->
 <div id="auth-screen" class="card">
 <h3>Welcome to EarnWave</h3>
 <p class="small">Sign in or create an account to start earning demo points.</p>
@@ -49,7 +49,7 @@ input{width:100%;padding:12px;margin:8px 0;border:1px solid #cbd5e1;border-radiu
 <button id="signup-btn" onclick="signup()" style="background:#0f172a">Create Account</button>
 </div>
 
-<!-- DASHBOARD SCREEN (Shows when logged in) -->
+<!-- DASHBOARD SCREEN -->
 <div id="dashboard-screen" class="hidden">
 <div class="card balance">
 <p>YOUR DEMO POINTS</p>
@@ -93,7 +93,6 @@ input{width:100%;padding:12px;margin:8px 0;border:1px solid #cbd5e1;border-radiu
 <footer>EarnWave © 2026</footer>
 
 <script>
-// 1. Initialize Supabase
 const SUPABASE_URL = 'https://yyzcnvhngyeoevhxtvhf.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_JeUHKRDJKJdOWgi7O2EyiA_Pm3TuJb-';
 const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
@@ -101,7 +100,6 @@ const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 let currentUser = null;
 let userPoints = 0;
 
-// 2. Check if user is already logged in on page load
 async function checkSession() {
   const { data: { session } } = await supabase.auth.getSession();
   if (session) {
@@ -113,19 +111,18 @@ async function checkSession() {
 }
 
 function showAuth() {
-  document.getElementById('auth-screen').classList.remove('hidden');
-  document.getElementById('dashboard-screen').classList.add('hidden');
-  document.getElementById('logout-btn').classList.add('hidden');
+  document.getElementById('auth-screen').style.display = 'block';
+  document.getElementById('dashboard-screen').style.display = 'none';
+  document.getElementById('logout-btn').style.display = 'none';
 }
 
 function showDashboard() {
-  document.getElementById('auth-screen').classList.add('hidden');
-  document.getElementById('dashboard-screen').classList.remove('hidden');
-  document.getElementById('logout-btn').classList.remove('hidden');
+  document.getElementById('auth-screen').style.display = 'none';
+  document.getElementById('dashboard-screen').style.display = 'block';
+  document.getElementById('logout-btn').style.display = 'block';
   loadUserData();
 }
 
-// 3. Auth Functions
 async function signup() {
   const email = document.getElementById('email').value;
   const password = document.getElementById('password').value;
@@ -143,6 +140,7 @@ async function signup() {
   if (error) {
     errorDiv.textContent = error.message;
   } else {
+    // If email confirmations are disabled, Supabase logs them in automatically
     if(data.session) {
       currentUser = data.user;
       showDashboard();
@@ -180,23 +178,19 @@ async function logout() {
   showAuth();
 }
 
-// 4. Load User Data (Points and Tasks)
 async function loadUserData() {
   if(!currentUser) return;
   
-  // Get points from profile
   const { data: profile } = await supabase.from('profiles').select('points').eq('id', currentUser.id).single();
   if (profile) {
     userPoints = profile.points;
     document.getElementById('points').textContent = userPoints + " points";
   } else {
-    // If no profile exists (e.g. first time), create one
     await supabase.from('profiles').insert([{ id: currentUser.id, points: 0 }]);
     userPoints = 0;
     document.getElementById('points').textContent = "0 points";
   }
 
-  // Get completed tasks
   const { data: tasks } = await supabase.from('task_completions').select('task_id').eq('user_id', currentUser.id);
   if (tasks) {
     tasks.forEach(t => {
@@ -210,14 +204,12 @@ async function loadUserData() {
   }
 }
 
-// 5. Complete Task
 async function completeTask(taskId, pointsValue, button) {
   if(!currentUser) return;
   
   button.textContent = "Saving...";
   button.disabled = true;
 
-  // 1. Save the task completion
   const { error: taskError } = await supabase.from('task_completions').insert([
     { user_id: currentUser.id, task_id: taskId, points_earned: pointsValue }
   ]);
@@ -229,7 +221,6 @@ async function completeTask(taskId, pointsValue, button) {
     return;
   }
 
-  // 2. Add the points to the profile
   const newPoints = userPoints + pointsValue;
   const { error: profileError } = await supabase.from('profiles').update({ points: newPoints }).eq('id', currentUser.id);
 
@@ -240,7 +231,6 @@ async function completeTask(taskId, pointsValue, button) {
     return;
   }
 
-  // 3. Update UI
   userPoints = newPoints;
   document.getElementById('points').textContent = userPoints + " points";
   button.textContent = "Completed";
@@ -248,8 +238,7 @@ async function completeTask(taskId, pointsValue, button) {
   button.style.opacity = "0.6";
 }
 
-// Start the app
 checkSession();
 </script>
 </body>
- </html>
+</html>
