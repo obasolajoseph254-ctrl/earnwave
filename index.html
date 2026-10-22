@@ -21,7 +21,7 @@ button:disabled{background:#94a3b8;cursor:not-allowed}
 .task button{width:auto;margin-top:0;padding:8px 12px;font-size:14px}
 .small{font-size:13px;color:#64748b}
 footer{text-align:center;padding:25px;color:#64748b}
-input{width:100%;padding:12px;margin:8px 0;border:1px solid #cbd5e1;border-radius:8px;font-size:16px}
+input, select, textarea{width:100%;padding:12px;margin:8px 0;border:1px solid #cbd5e1;border-radius:8px;font-size:16px;font-family:inherit;background:white;}
 .hidden{display:none !important}
 .logout-btn{background:#ef4444;padding:8px 12px;font-size:14px;width:auto;margin:0}
 .error{color:#ef4444;font-size:14px;margin-top:10px}
@@ -29,6 +29,10 @@ input{width:100%;padding:12px;margin:8px 0;border:1px solid #cbd5e1;border-radiu
 .link-text{color:#0f172a;font-size:14px;text-align:center;cursor:pointer;margin-top:15px;text-decoration:underline;}
 .history-item{display:flex;justify-content:space-between;border-bottom:1px solid #e2e8f0;padding:10px 0;font-size:14px}
 .history-item:last-child{border-bottom:none;}
+.admin-card{background:#fef3c7; border:2px solid #f59e0b;}
+.badge{font-size:11px; padding:2px 6px; border-radius:4px; font-weight:bold; margin-left:5px;}
+.badge-premium{background:#f59e0b; color:white;}
+.badge-free{background:#e2e8f0; color:#475569;}
 </style>
 </head>
 <body>
@@ -42,7 +46,7 @@ input{width:100%;padding:12px;margin:8px 0;border:1px solid #cbd5e1;border-radiu
 
 <main>
 <!-- AUTH SCREEN -->
-<div id="auth-screen" class="card">
+<div id="auth-screen" class="card hidden">
 <h3>Welcome to EarnWave</h3>
 <p class="small">Sign in or create an account to start earning demo points.</p>
 <input type="email" id="email" placeholder="Email address">
@@ -58,48 +62,53 @@ input{width:100%;padding:12px;margin:8px 0;border:1px solid #cbd5e1;border-radiu
 <div class="card balance">
 <p>YOUR DEMO POINTS</p>
 <h2 id="points">0 points</h2>
-<p class="small" style="color:#d1fae5">Complete sample tasks to collect demo points.</p>
+<p class="small" style="color:#d1fae5">Current Plan: <b id="user-plan">Free</b></p>
+</div>
+
+<!-- ADMIN PANEL -->
+<div id="admin-panel" class="card admin-card hidden">
+<h3>🛡️ Admin Panel</h3>
+<p class="small">Create a new task.</p>
+<input type="text" id="admin-task-title" placeholder="Task Title">
+<input type="text" id="admin-task-desc" placeholder="Short Description">
+<input type="number" id="admin-task-points" placeholder="Points (e.g. 40)">
+<select id="admin-task-type">
+  <option value="free">Free Task (Everyone can do it)</option>
+  <option value="premium">Premium Task (Premium users only)</option>
+</select>
+<button onclick="createTask()" style="background:#b45309;">Publish Task</button>
+<div id="admin-msg" class="small" style="margin-top:10px;"></div>
+
+<hr style="margin:20px 0;">
+<h4>👥 Registered Users</h4>
+<div id="admin-user-list" class="small">Loading...</div>
 </div>
 
 <div class="card">
 <h3>Available Tasks</h3>
-<div class="task">
-<div><b>Explore EarnWave</b><p class="small">View your dashboard.</p></div>
-<button id="btn-explore" onclick="completeTask('explore',50,this)">+50 points</button>
-</div>
-<hr>
-<div class="task">
-<div><b>Daily Learning</b><p class="small">Read a learning tip.</p></div>
-<button id="btn-learn" onclick="completeTask('learn',30,this)">+30 points</button>
-</div>
-<hr>
-<div class="task">
-<div><b>Website Feedback</b><p class="small">Tell us what can improve.</p></div>
-<button id="btn-feedback" onclick="completeTask('feedback',20,this)">+20 points</button>
+<div id="tasks-container">
+<p class="small">Loading tasks...</p>
 </div>
 </div>
 
-<!-- NEW: Activity History Section -->
 <div class="card">
 <h3>Activity History</h3>
-<div id="history-list">
-<p class="small">No activity yet. Complete a task to see your history.</p>
-</div>
+<div id="history-list"></div>
 </div>
 
 <div class="card">
 <h3>Premium Membership</h3>
-<p>Proposed price: ₦500/month.</p>
-<p class="small">Premium benefits and payment terms must be finalised before launch. This demo does not collect payments.</p>
-<button onclick="alert('Premium is not yet available. No payment has been taken.')">View Premium</button>
+<p>Upgrade to Premium to unlock special tasks.</p>
+<p class="small">Proposed price: ₦500/month.</p>
+<button id="btn-premium" onclick="upgradePremium()">Upgrade to Premium</button>
+<div id="premium-msg" class="small" style="margin-top:10px;"></div>
 </div>
 
 <div class="card">
 <h3>Withdrawals</h3>
-<p class="small">Demo only. Points have no cash value, and no money is sent.</p>
-<button onclick="alert('Real withdrawals are not enabled on this demo.')">Withdrawal Information</button>
+<p class="small">Demo only. No real money is sent.</p>
+<button onclick="alert('Real withdrawals are not enabled.')">Withdrawal Info</button>
 </div>
-<p class="small" style="text-align:center">EarnWave demo • No real payments, deposits, or cash rewards.</p>
 </div>
 </main>
 <footer>EarnWave © 2026</footer>
@@ -109,8 +118,12 @@ const SUPABASE_URL = 'https://yyzcnvhngyeoevhxtvhf.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_JeUHKRDJKJdOWgi7O2EyiA_Pm3TuJb-';
 const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
+const ADMIN_EMAIL = 'obasolajoseph254@gmail.com'; 
+
 let currentUser = null;
 let userPoints = 0;
+let userMembership = 'free';
+let allTasks = [];
 
 document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('auth-screen').classList.add('hidden');
@@ -139,6 +152,11 @@ function showDashboard() {
   document.getElementById('auth-screen').classList.add('hidden');
   document.getElementById('dashboard-screen').classList.remove('hidden');
   document.getElementById('logout-btn').classList.remove('hidden');
+  
+  if(currentUser.email === ADMIN_EMAIL) {
+    document.getElementById('admin-panel').classList.remove('hidden');
+    loadAdminUsers(); 
+  }
   loadUserData();
 }
 
@@ -158,7 +176,7 @@ async function signup() {
     msgDiv.textContent = error.message;
   } else {
     if(data.session) { currentUser = data.user; showDashboard(); } 
-    else { alert("Account created! Please check your email to verify your account, then log in."); }
+    else { alert("Check your email to verify your account, then log in."); }
   }
 }
 
@@ -183,7 +201,7 @@ async function forgotPassword() {
   const msgDiv = document.getElementById('auth-message');
   msgDiv.className = "error"; msgDiv.textContent = "";
 
-  if(!email) { msgDiv.textContent = "Please type your email address first, then tap Forgot Password."; return; }
+  if(!email) { msgDiv.textContent = "Please type your email address first."; return; }
 
   const { error } = await supabaseClient.auth.resetPasswordForEmail(email, {
     redirectTo: window.location.origin + window.location.pathname
@@ -202,57 +220,88 @@ async function logout() {
 async function loadUserData() {
   if(!currentUser) return;
   
-  // Load Points
-  const { data: profile } = await supabaseClient.from('profiles').select('points').eq('id', currentUser.id).single();
+  // 1. Load Profile (Points & Membership)
+  const { data: profile } = await supabaseClient.from('profiles').select('points, membership').eq('id', currentUser.id).single();
   if (profile) {
     userPoints = profile.points;
+    userMembership = profile.membership;
     document.getElementById('points').textContent = userPoints + " points";
+    document.getElementById('user-plan').textContent = userMembership === 'premium' ? 'Premium 🌟' : 'Free';
+    
+    if(userMembership === 'premium') {
+        document.getElementById('btn-premium').style.display = 'none';
+        document.getElementById('premium-msg').textContent = "You are already a Premium member!";
+        document.getElementById('premium-msg').className = "success";
+    }
   } else {
-    await supabaseClient.from('profiles').insert([{ id: currentUser.id, points: 0 }]);
+    await supabaseClient.from('profiles').insert([{ id: currentUser.id, points: 0, membership: 'free' }]);
     userPoints = 0;
-    document.getElementById('points').textContent = "0 points";
+    userMembership = 'free';
   }
 
-  // Load Tasks and Update Buttons
-  const { data: tasks } = await supabaseClient.from('task_completions').select('*').eq('user_id', currentUser.id).order('completed_at', { ascending: false });
+  // 2. Load Tasks
+  const { data: tasksData } = await supabaseClient.from('tasks').select('*').order('created_at', { ascending: true });
+  allTasks = tasksData || [];
   
-  if (tasks) {
-    // Update Buttons
-    tasks.forEach(t => {
-      const btn = document.getElementById('btn-' + t.task_id);
-      if (btn) {
-        btn.textContent = "Completed";
-        btn.disabled = true;
-        btn.style.opacity = "0.6";
-      }
-    });
+  // 3. Load Completed Tasks
+  const { data: completedTasks } = await supabaseClient.from('task_completions').select('*').eq('user_id', currentUser.id).order('completed_at', { ascending: false });
+  
+  // 4. Render Tasks
+  const tasksContainer = document.getElementById('tasks-container');
+  tasksContainer.innerHTML = ''; 
+  
+  if(allTasks.length === 0) {
+      tasksContainer.innerHTML = '<p class="small">No tasks available yet. Check back later!</p>';
+  }
 
-    // Build Activity History
-    const historyDiv = document.getElementById('history-list');
-    if (tasks.length === 0) {
-      historyDiv.innerHTML = '<p class="small">No activity yet. Complete a task to see your history.</p>';
+  allTasks.forEach((t, index) => {
+    const isCompleted = completedTasks.find(ct => ct.task_id === t.id);
+    const isPremiumTask = t.task_type === 'premium';
+    
+    let buttonHTML = '';
+    if(isCompleted) {
+        buttonHTML = `<button disabled style="background:#94a3b8; opacity:0.6;">Completed</button>`;
+    } else if (isPremiumTask && userMembership !== 'premium') {
+        buttonHTML = `<button onclick="alert('This is a Premium task. Please upgrade to unlock it.')" style="background:#f59e0b;">🔒 Locked</button>`;
     } else {
-      historyDiv.innerHTML = '';
-      tasks.forEach(t => {
-        // Format the date nicely
-        const date = new Date(t.completed_at).toLocaleDateString();
-        const taskName = t.task_id.charAt(0).toUpperCase() + t.task_id.slice(1); // Capitalize first letter
-        
-        historyDiv.innerHTML += `
-          <div class="history-item">
-            <span><b>${taskName}</b> task</span>
-            <span style="color:#087f5b; font-weight:bold;">+${t.points_earned} pts</span>
-            <span class="small">${date}</span>
-          </div>
-        `;
-      });
+        buttonHTML = `<button onclick="completeTask('${t.id}', ${t.points}, this)">+${t.points} points</button>`;
     }
+
+    const badge = isPremiumTask ? '<span class="badge badge-premium">PREMIUM</span>' : '<span class="badge badge-free">FREE</span>';
+    
+    const taskDiv = document.createElement('div');
+    taskDiv.className = 'task';
+    taskDiv.innerHTML = `
+      <div><b>${t.title}</b> ${badge}<p class="small">${t.description}</p></div>
+      ${buttonHTML}
+    `;
+    tasksContainer.appendChild(taskDiv);
+    if(index !== allTasks.length - 1) tasksContainer.innerHTML += '<hr>';
+  });
+
+  // 5. Build Activity History
+  const historyDiv = document.getElementById('history-list');
+  if (completedTasks.length === 0) {
+    historyDiv.innerHTML = '<p class="small">No activity yet.</p>';
+  } else {
+    historyDiv.innerHTML = '';
+    completedTasks.forEach(ct => {
+      const date = new Date(ct.completed_at).toLocaleDateString();
+      const taskInfo = allTasks.find(t => t.id === ct.task_id);
+      const taskName = taskInfo ? taskInfo.title : 'Task';
+      historyDiv.innerHTML += `
+        <div class="history-item">
+          <span><b>${taskName}</b></span>
+          <span style="color:#087f5b; font-weight:bold;">+${ct.points_earned} pts</span>
+          <span class="small">${date}</span>
+        </div>
+      `;
+    });
   }
 }
 
 async function completeTask(taskId, pointsValue, button) {
   if(!currentUser) return;
-  
   button.textContent = "Saving...";
   button.disabled = true;
 
@@ -268,17 +317,85 @@ async function completeTask(taskId, pointsValue, button) {
   }
 
   const newPoints = userPoints + pointsValue;
-  const { error: profileError } = await supabaseClient.from('profiles').update({ points: newPoints }).eq('id', currentUser.id);
+  await supabaseClient.from('profiles').update({ points: newPoints }).eq('id', currentUser.id);
+  loadUserData();
+}
 
-  if (profileError) {
-    alert("Could not save points. Please try again.");
-    button.textContent = "+" + pointsValue + " points";
-    button.disabled = false;
+// Admin: Create Task
+async function createTask() {
+  const title = document.getElementById('admin-task-title').value;
+  const desc = document.getElementById('admin-task-desc').value;
+  const points = document.getElementById('admin-task-points').value;
+  const type = document.getElementById('admin-task-type').value;
+  const msg = document.getElementById('admin-msg');
+
+  if(!title || !desc || !points) {
+    msg.style.color = "red";
+    msg.textContent = "Please fill in all fields.";
     return;
   }
 
-  // Reload the whole dashboard to update points AND history
-  loadUserData();
+  msg.style.color = "blue";
+  msg.textContent = "Publishing...";
+
+  const { error } = await supabaseClient.from('tasks').insert([
+    { title: title, description: desc, points: parseInt(points), task_type: type }
+  ]);
+
+  if(error) {
+    msg.style.color = "red";
+    msg.textContent = "Error: " + error.message;
+  } else {
+    msg.style.color = "green";
+    msg.textContent = "Task published successfully!";
+    document.getElementById('admin-task-title').value = '';
+    document.getElementById('admin-task-desc').value = '';
+    document.getElementById('admin-task-points').value = '';
+    loadUserData();
+  }
+}
+
+// Admin: Load Users
+async function loadAdminUsers() {
+  const listDiv = document.getElementById('admin-user-list');
+  const { data: profiles } = await supabaseClient.from('profiles').select('*');
+  
+  if(!profiles || profiles.length === 0) {
+    listDiv.innerHTML = 'No users found.';
+    return;
+  }
+
+  listDiv.innerHTML = '';
+  profiles.forEach(p => {
+    const shortId = p.id.substring(0, 6); 
+    const plan = p.membership === 'premium' ? '🌟' : 'Free';
+    listDiv.innerHTML += `
+      <div class="history-item">
+        <span>ID: ${shortId}...</span>
+        <span>${plan}</span>
+        <span style="font-weight:bold;">${p.points} pts</span>
+      </div>
+    `;
+  });
+}
+
+// User: Upgrade to Premium (Demo)
+async function upgradePremium() {
+    const msg = document.getElementById('premium-msg');
+    msg.style.color = 'blue';
+    msg.textContent = "Upgrading... (Demo)";
+    
+    // In a real app, you would process payment first!
+    const { error } = await supabaseClient.from('profiles').update({ membership: 'premium' }).eq('id', currentUser.id);
+    
+    if(error) {
+        msg.style.color = 'red';
+        msg.textContent = "Error upgrading.";
+    } else {
+        msg.style.color = 'green';
+        msg.textContent = "Upgraded to Premium!";
+        loadUserData(); // Refresh screen
+    }
 }
 </script>
 </body>
