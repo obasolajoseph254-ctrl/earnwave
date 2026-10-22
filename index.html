@@ -27,6 +27,8 @@ input{width:100%;padding:12px;margin:8px 0;border:1px solid #cbd5e1;border-radiu
 .error{color:#ef4444;font-size:14px;margin-top:10px}
 .success{color:#087f5b;font-size:14px;margin-top:10px;font-weight:bold}
 .link-text{color:#0f172a;font-size:14px;text-align:center;cursor:pointer;margin-top:15px;text-decoration:underline;}
+.history-item{display:flex;justify-content:space-between;border-bottom:1px solid #e2e8f0;padding:10px 0;font-size:14px}
+.history-item:last-child{border-bottom:none;}
 </style>
 </head>
 <body>
@@ -74,6 +76,14 @@ input{width:100%;padding:12px;margin:8px 0;border:1px solid #cbd5e1;border-radiu
 <div class="task">
 <div><b>Website Feedback</b><p class="small">Tell us what can improve.</p></div>
 <button id="btn-feedback" onclick="completeTask('feedback',20,this)">+20 points</button>
+</div>
+</div>
+
+<!-- NEW: Activity History Section -->
+<div class="card">
+<h3>Activity History</h3>
+<div id="history-list">
+<p class="small">No activity yet. Complete a task to see your history.</p>
 </div>
 </div>
 
@@ -136,26 +146,19 @@ async function signup() {
   const email = document.getElementById('email').value;
   const password = document.getElementById('password').value;
   const msgDiv = document.getElementById('auth-message');
-  msgDiv.className = "error";
-  msgDiv.textContent = "";
+  msgDiv.className = "error"; msgDiv.textContent = "";
   
   if(!email || !password) { msgDiv.textContent = "Please enter email and password."; return; }
   
   document.getElementById('signup-btn').textContent = "Creating...";
-  
   const { data, error } = await supabaseClient.auth.signUp({ email, password });
-  
   document.getElementById('signup-btn').textContent = "Create Account";
   
   if (error) {
     msgDiv.textContent = error.message;
   } else {
-    if(data.session) {
-      currentUser = data.user;
-      showDashboard();
-    } else {
-      alert("Account created! Please check your email to verify your account, then log in.");
-    }
+    if(data.session) { currentUser = data.user; showDashboard(); } 
+    else { alert("Account created! Please check your email to verify your account, then log in."); }
   }
 }
 
@@ -163,48 +166,31 @@ async function login() {
   const email = document.getElementById('email').value;
   const password = document.getElementById('password').value;
   const msgDiv = document.getElementById('auth-message');
-  msgDiv.className = "error";
-  msgDiv.textContent = "";
+  msgDiv.className = "error"; msgDiv.textContent = "";
   
   if(!email || !password) { msgDiv.textContent = "Please enter email and password."; return; }
   
   document.getElementById('login-btn').textContent = "Logging in...";
-  
   const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
-  
   document.getElementById('login-btn').textContent = "Log In";
   
-  if (error) {
-    msgDiv.textContent = error.message;
-  } else {
-    currentUser = data.user;
-    showDashboard();
-  }
+  if (error) { msgDiv.textContent = error.message; } 
+  else { currentUser = data.user; showDashboard(); }
 }
 
-// NEW: Forgot Password Function
 async function forgotPassword() {
   const email = document.getElementById('email').value;
   const msgDiv = document.getElementById('auth-message');
-  msgDiv.className = "error";
-  msgDiv.textContent = "";
+  msgDiv.className = "error"; msgDiv.textContent = "";
 
-  if(!email) { 
-    msgDiv.textContent = "Please type your email address in the box above first, then tap Forgot Password."; 
-    return; 
-  }
+  if(!email) { msgDiv.textContent = "Please type your email address first, then tap Forgot Password."; return; }
 
-  const { data, error } = await supabaseClient.auth.resetPasswordForEmail(email, {
+  const { error } = await supabaseClient.auth.resetPasswordForEmail(email, {
     redirectTo: window.location.origin + window.location.pathname
   });
 
-  if (error) {
-    msgDiv.className = "error";
-    msgDiv.textContent = error.message;
-  } else {
-    msgDiv.className = "success";
-    msgDiv.textContent = "Password reset link sent! Check your email.";
-  }
+  if (error) { msgDiv.textContent = error.message; } 
+  else { msgDiv.className = "success"; msgDiv.textContent = "Password reset link sent! Check your email."; }
 }
 
 async function logout() {
@@ -216,6 +202,7 @@ async function logout() {
 async function loadUserData() {
   if(!currentUser) return;
   
+  // Load Points
   const { data: profile } = await supabaseClient.from('profiles').select('points').eq('id', currentUser.id).single();
   if (profile) {
     userPoints = profile.points;
@@ -226,8 +213,11 @@ async function loadUserData() {
     document.getElementById('points').textContent = "0 points";
   }
 
-  const { data: tasks } = await supabaseClient.from('task_completions').select('task_id').eq('user_id', currentUser.id);
+  // Load Tasks and Update Buttons
+  const { data: tasks } = await supabaseClient.from('task_completions').select('*').eq('user_id', currentUser.id).order('completed_at', { ascending: false });
+  
   if (tasks) {
+    // Update Buttons
     tasks.forEach(t => {
       const btn = document.getElementById('btn-' + t.task_id);
       if (btn) {
@@ -236,6 +226,27 @@ async function loadUserData() {
         btn.style.opacity = "0.6";
       }
     });
+
+    // Build Activity History
+    const historyDiv = document.getElementById('history-list');
+    if (tasks.length === 0) {
+      historyDiv.innerHTML = '<p class="small">No activity yet. Complete a task to see your history.</p>';
+    } else {
+      historyDiv.innerHTML = '';
+      tasks.forEach(t => {
+        // Format the date nicely
+        const date = new Date(t.completed_at).toLocaleDateString();
+        const taskName = t.task_id.charAt(0).toUpperCase() + t.task_id.slice(1); // Capitalize first letter
+        
+        historyDiv.innerHTML += `
+          <div class="history-item">
+            <span><b>${taskName}</b> task</span>
+            <span style="color:#087f5b; font-weight:bold;">+${t.points_earned} pts</span>
+            <span class="small">${date}</span>
+          </div>
+        `;
+      });
+    }
   }
 }
 
@@ -266,11 +277,8 @@ async function completeTask(taskId, pointsValue, button) {
     return;
   }
 
-  userPoints = newPoints;
-  document.getElementById('points').textContent = userPoints + " points";
-  button.textContent = "Completed";
-  button.disabled = true;
-  button.style.opacity = "0.6";
+  // Reload the whole dashboard to update points AND history
+  loadUserData();
 }
 </script>
 </body>
