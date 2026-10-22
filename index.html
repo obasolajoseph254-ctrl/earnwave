@@ -36,6 +36,7 @@ input, select, textarea{width:100%;padding:12px;margin:8px 0;border:1px solid #c
 .badge-pending{background:#3b82f6; color:white;}
 .badge-approved{background:#10b981; color:white;}
 .badge-rejected{background:#ef4444; color:white;}
+.badge-slots{background:#cbd5e1; color:#172033; font-size:11px; padding:2px 6px; border-radius:4px; font-weight:bold; margin-left:5px;}
 .upload-box{display:none; margin-top:15px; padding:15px; background:#f8fafc; border:1px dashed #cbd5e1; border-radius:8px;}
 .admin-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 10px; background: white; }
 .admin-table th, .admin-table td { border: 1px solid #cbd5e1; padding: 8px; text-align: left; }
@@ -253,6 +254,7 @@ async function loadUserData() {
   
   const { data: completedTasks } = await supabaseClient.from('task_completions').select('*').eq('user_id', currentUser.id).order('completed_at', { ascending: false });
   
+  // Get ALL submissions (not rejected) to count how many people did each task
   const { data: allSubmissions } = await supabaseClient.from('task_completions').select('task_id, status').neq('status', 'rejected');
   
   const tasksContainer = document.getElementById('tasks-container');
@@ -263,10 +265,11 @@ async function loadUserData() {
   }
 
   allTasks.forEach((t, index) => {
-    const submission = completedTasks.find(ct => ct.task_id === t.id);
+    const submission = completedTasks.find(ct => String(ct.task_id) === String(t.id));
     const isPremiumTask = t.task_type === 'premium';
     
-    const taskSubmissionsCount = allSubmissions ? allSubmissions.filter(s => s.task_id === t.id).length : 0;
+    // Count how many people have done this task
+    const taskSubmissionsCount = allSubmissions ? allSubmissions.filter(s => String(s.task_id) === String(t.id)).length : 0;
     const limitReached = taskSubmissionsCount >= t.max_completions;
     
     let buttonHTML = '';
@@ -287,13 +290,13 @@ async function loadUserData() {
     }
 
     const badge = isPremiumTask ? '<span class="badge badge-premium">PREMIUM</span>' : '<span class="badge badge-free">FREE</span>';
-    const limitText = `<span class="small">(Slots: ${taskSubmissionsCount}/${t.max_completions})</span>`;
+    const slotsText = `<span class="badge badge-slots">👥 ${taskSubmissionsCount}/${t.max_completions}</span>`;
     
     const taskDiv = document.createElement('div');
     taskDiv.className = 'task';
     taskDiv.innerHTML = `
       <div style="flex:1;">
-        <b>${t.title}</b> ${badge} ${limitText}<p class="small">${t.description}</p>
+        <b>${t.title}</b> ${badge} ${slotsText}<p class="small">${t.description}</p>
         <div id="upload-${t.id}" class="upload-box">
             <p class="small" style="margin-top:0;">Upload a screenshot to prove you did this task:</p>
             <input type="file" id="file-${t.id}" accept="image/*">
@@ -408,7 +411,6 @@ async function createTask() {
   }
 }
 
-// Safe Admin Submissions Loader
 async function loadAdminSubmissions() {
     const div = document.getElementById('admin-submissions');
     
@@ -426,11 +428,10 @@ async function loadAdminSubmissions() {
         }
         
         let html = `<table class="admin-table">
-            <tr><th>User ID</th><th>Task ID</th><th>Points</th><th>Action</th></tr>`;
+            <tr><th>User ID</th><th>Points</th><th>Action</th></tr>`;
             
         for (const item of pending) {
             const userId = item.user_id ? item.user_id.substring(0,6) : 'Unknown';
-            const taskId = item.task_id ? item.task_id.substring(0,6) : 'Unknown';
             const points = item.points_earned;
             
             let imgLink = '#';
@@ -446,7 +447,6 @@ async function loadAdminSubmissions() {
             html += `
                 <tr>
                     <td>${userId}...</td>
-                    <td>${taskId}...</td>
                     <td>+${points}</td>
                     <td>
                         ${imgLink !== '#' ? `<a href="${imgLink}" target="_blank" style="color:#3b82f6; display:block; margin-bottom:5px;">🔍 View SS</a>` : '<span class="small">No SS</span>'}
