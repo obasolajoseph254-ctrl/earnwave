@@ -33,6 +33,10 @@ input, select, textarea{width:100%;padding:12px;margin:8px 0;border:1px solid #c
 .badge{font-size:11px; padding:2px 6px; border-radius:4px; font-weight:bold; margin-left:5px;}
 .badge-premium{background:#f59e0b; color:white;}
 .badge-free{background:#e2e8f0; color:#475569;}
+.badge-pending{background:#3b82f6; color:white;}
+.badge-approved{background:#10b981; color:white;}
+.badge-rejected{background:#ef4444; color:white;}
+.upload-box{display:none; margin-top:15px; padding:15px; background:#f8fafc; border:1px dashed #cbd5e1; border-radius:8px;}
 </style>
 </head>
 <body>
@@ -71,10 +75,11 @@ input, select, textarea{width:100%;padding:12px;margin:8px 0;border:1px solid #c
 <p class="small">Create a new task.</p>
 <input type="text" id="admin-task-title" placeholder="Task Title">
 <input type="text" id="admin-task-desc" placeholder="Short Description">
-<input type="number" id="admin-task-points" placeholder="Points (e.g. 40)">
+<input type="url" id="admin-task-link" placeholder="Task Link (https://...)">
+<input type="number" id="admin-task-points" placeholder="Points">
 <select id="admin-task-type">
-  <option value="free">Free Task (Everyone can do it)</option>
-  <option value="premium">Premium Task (Premium users only)</option>
+  <option value="free">Free Task</option>
+  <option value="premium">Premium Task</option>
 </select>
 <button onclick="createTask()" style="background:#b45309;">Publish Task</button>
 <div id="admin-msg" class="small" style="margin-top:10px;"></div>
@@ -82,13 +87,15 @@ input, select, textarea{width:100%;padding:12px;margin:8px 0;border:1px solid #c
 <hr style="margin:20px 0;">
 <h4>👥 Registered Users</h4>
 <div id="admin-user-list" class="small">Loading...</div>
+
+<hr style="margin:20px 0;">
+<h4>📥 Task Submissions (Pending Approval)</h4>
+<div id="admin-submissions" class="small">Loading...</div>
 </div>
 
 <div class="card">
 <h3>Available Tasks</h3>
-<div id="tasks-container">
-<p class="small">Loading tasks...</p>
-</div>
+<div id="tasks-container"></div>
 </div>
 
 <div class="card">
@@ -98,16 +105,9 @@ input, select, textarea{width:100%;padding:12px;margin:8px 0;border:1px solid #c
 
 <div class="card">
 <h3>Premium Membership</h3>
-<p>Upgrade to Premium to unlock special tasks.</p>
 <p class="small">Proposed price: ₦500/month.</p>
-<button id="btn-premium" onclick="upgradePremium()">Upgrade to Premium</button>
+<button id="btn-premium" onclick="requestPremium()">Request Premium Upgrade</button>
 <div id="premium-msg" class="small" style="margin-top:10px;"></div>
-</div>
-
-<div class="card">
-<h3>Withdrawals</h3>
-<p class="small">Demo only. No real money is sent.</p>
-<button onclick="alert('Real withdrawals are not enabled.')">Withdrawal Info</button>
 </div>
 </div>
 </main>
@@ -156,6 +156,7 @@ function showDashboard() {
   if(currentUser.email === ADMIN_EMAIL) {
     document.getElementById('admin-panel').classList.remove('hidden');
     loadAdminUsers(); 
+    loadAdminSubmissions();
   }
   loadUserData();
 }
@@ -172,9 +173,8 @@ async function signup() {
   const { data, error } = await supabaseClient.auth.signUp({ email, password });
   document.getElementById('signup-btn').textContent = "Create Account";
   
-  if (error) {
-    msgDiv.textContent = error.message;
-  } else {
+  if (error) { msgDiv.textContent = error.message; } 
+  else {
     if(data.session) { currentUser = data.user; showDashboard(); } 
     else { alert("Check your email to verify your account, then log in."); }
   }
@@ -220,7 +220,6 @@ async function logout() {
 async function loadUserData() {
   if(!currentUser) return;
   
-  // 1. Load Profile (Points & Membership)
   const { data: profile } = await supabaseClient.from('profiles').select('points, membership').eq('id', currentUser.id).single();
   if (profile) {
     userPoints = profile.points;
@@ -239,14 +238,11 @@ async function loadUserData() {
     userMembership = 'free';
   }
 
-  // 2. Load Tasks
   const { data: tasksData } = await supabaseClient.from('tasks').select('*').order('created_at', { ascending: true });
   allTasks = tasksData || [];
   
-  // 3. Load Completed Tasks
   const { data: completedTasks } = await supabaseClient.from('task_completions').select('*').eq('user_id', currentUser.id).order('completed_at', { ascending: false });
   
-  // 4. Render Tasks
   const tasksContainer = document.getElementById('tasks-container');
   tasksContainer.innerHTML = ''; 
   
@@ -255,16 +251,22 @@ async function loadUserData() {
   }
 
   allTasks.forEach((t, index) => {
-    const isCompleted = completedTasks.find(ct => ct.task_id === t.id);
+    const submission = completedTasks.find(ct => ct.task_id === t.id);
     const isPremiumTask = t.task_type === 'premium';
     
     let buttonHTML = '';
-    if(isCompleted) {
-        buttonHTML = `<button disabled style="background:#94a3b8; opacity:0.6;">Completed</button>`;
+    if(submission) {
+        if(submission.status === 'pending') {
+            buttonHTML = `<button disabled style="background:#3b82f6; opacity:0.8;">Pending Approval</button>`;
+        } else if(submission.status === 'approved') {
+            buttonHTML = `<button disabled style="background:#10b981; opacity:0.8;">Approved ✅</button>`;
+        } else {
+            buttonHTML = `<button disabled style="background:#ef4444; opacity:0.8;">Rejected ❌</button>`;
+        }
     } else if (isPremiumTask && userMembership !== 'premium') {
         buttonHTML = `<button onclick="alert('This is a Premium task. Please upgrade to unlock it.')" style="background:#f59e0b;">🔒 Locked</button>`;
     } else {
-        buttonHTML = `<button onclick="completeTask('${t.id}', ${t.points}, this)">+${t.points} points</button>`;
+        buttonHTML = `<button onclick="showUpload('${t.id}', '${t.task_link}')">Start Task</button>`;
     }
 
     const badge = isPremiumTask ? '<span class="badge badge-premium">PREMIUM</span>' : '<span class="badge badge-free">FREE</span>';
@@ -272,14 +274,21 @@ async function loadUserData() {
     const taskDiv = document.createElement('div');
     taskDiv.className = 'task';
     taskDiv.innerHTML = `
-      <div><b>${t.title}</b> ${badge}<p class="small">${t.description}</p></div>
-      ${buttonHTML}
+      <div style="flex:1;">
+        <b>${t.title}</b> ${badge}<p class="small">${t.description}</p>
+        <!-- Hidden Upload Box for this task -->
+        <div id="upload-${t.id}" class="upload-box">
+            <p class="small" style="margin-top:0;">Upload a screenshot to prove you did this task:</p>
+            <input type="file" id="file-${t.id}" accept="image/*">
+            <button onclick="submitTask('${t.id}', ${t.points})" style="background:#087f5b; padding:8px;">Submit for Approval</button>
+        </div>
+      </div>
+      <div>${buttonHTML}</div>
     `;
     tasksContainer.appendChild(taskDiv);
     if(index !== allTasks.length - 1) tasksContainer.innerHTML += '<hr>';
   });
 
-  // 5. Build Activity History
   const historyDiv = document.getElementById('history-list');
   if (completedTasks.length === 0) {
     historyDiv.innerHTML = '<p class="small">No activity yet.</p>';
@@ -289,9 +298,14 @@ async function loadUserData() {
       const date = new Date(ct.completed_at).toLocaleDateString();
       const taskInfo = allTasks.find(t => t.id === ct.task_id);
       const taskName = taskInfo ? taskInfo.title : 'Task';
+      let statusBadge = '';
+      if(ct.status === 'pending') statusBadge = '<span class="badge badge-pending">Pending</span>';
+      if(ct.status === 'approved') statusBadge = '<span class="badge badge-approved">Approved</span>';
+      if(ct.status === 'rejected') statusBadge = '<span class="badge badge-rejected">Rejected</span>';
+      
       historyDiv.innerHTML += `
         <div class="history-item">
-          <span><b>${taskName}</b></span>
+          <span><b>${taskName}</b> ${statusBadge}</span>
           <span style="color:#087f5b; font-weight:bold;">+${ct.points_earned} pts</span>
           <span class="small">${date}</span>
         </div>
@@ -300,38 +314,61 @@ async function loadUserData() {
   }
 }
 
-async function completeTask(taskId, pointsValue, button) {
-  if(!currentUser) return;
-  button.textContent = "Saving...";
-  button.disabled = true;
-
-  const { error: taskError } = await supabaseClient.from('task_completions').insert([
-    { user_id: currentUser.id, task_id: taskId, points_earned: pointsValue }
-  ]);
-
-  if (taskError) {
-    alert("You already completed this task or an error occurred.");
-    button.textContent = "+" + pointsValue + " points";
-    button.disabled = false;
-    return;
-  }
-
-  const newPoints = userPoints + pointsValue;
-  await supabaseClient.from('profiles').update({ points: newPoints }).eq('id', currentUser.id);
-  loadUserData();
+// User opens upload box
+function showUpload(taskId, link) {
+    if(link) window.open(link, '_blank');
+    document.getElementById('upload-' + taskId).style.display = 'block';
 }
 
-// Admin: Create Task
+// User submits screenshot
+async function submitTask(taskId, pointsValue) {
+    const fileInput = document.getElementById('file-' + taskId);
+    if(fileInput.files.length === 0) {
+        alert("Please select a screenshot first.");
+        return;
+    }
+    
+    const file = fileInput.files[0];
+    const fileExt = file.name.split('.').pop();
+    const fileName = `${currentUser.id}-${taskId}-${Date.now()}.${fileExt}`;
+    
+    // 1. Upload to Supabase Storage
+    const { data: uploadData, error: uploadError } = await supabaseClient.storage
+        .from('screenshots')
+        .upload(fileName, file);
+        
+    if(uploadError) {
+        alert("Error uploading image: " + uploadError.message);
+        return;
+    }
+
+    // 2. Get the file path (we don't need a public URL since it's private)
+    const filePath = uploadData.path;
+
+    // 3. Save submission to database
+    const { error: dbError } = await supabaseClient.from('task_completions').insert([
+        { user_id: currentUser.id, task_id: taskId, points_earned: pointsValue, status: 'pending', screenshot_url: filePath }
+    ]);
+
+    if(dbError) {
+        alert("Error saving task: " + dbError.message);
+    } else {
+        alert("Screenshot uploaded! Please wait for Admin approval.");
+        loadUserData();
+    }
+}
+
 async function createTask() {
   const title = document.getElementById('admin-task-title').value;
   const desc = document.getElementById('admin-task-desc').value;
+  const link = document.getElementById('admin-task-link').value;
   const points = document.getElementById('admin-task-points').value;
   const type = document.getElementById('admin-task-type').value;
   const msg = document.getElementById('admin-msg');
 
   if(!title || !desc || !points) {
     msg.style.color = "red";
-    msg.textContent = "Please fill in all fields.";
+    msg.textContent = "Please fill in Title, Description, and Points.";
     return;
   }
 
@@ -339,7 +376,7 @@ async function createTask() {
   msg.textContent = "Publishing...";
 
   const { error } = await supabaseClient.from('tasks').insert([
-    { title: title, description: desc, points: parseInt(points), task_type: type }
+    { title: title, description: desc, task_link: link, points: parseInt(points), task_type: type }
   ]);
 
   if(error) {
@@ -350,12 +387,12 @@ async function createTask() {
     msg.textContent = "Task published successfully!";
     document.getElementById('admin-task-title').value = '';
     document.getElementById('admin-task-desc').value = '';
+    document.getElementById('admin-task-link').value = '';
     document.getElementById('admin-task-points').value = '';
     loadUserData();
   }
 }
 
-// Admin: Load Users
 async function loadAdminUsers() {
   const listDiv = document.getElementById('admin-user-list');
   const { data: profiles } = await supabaseClient.from('profiles').select('*');
@@ -368,7 +405,7 @@ async function loadAdminUsers() {
   listDiv.innerHTML = '';
   profiles.forEach(p => {
     const shortId = p.id.substring(0, 6); 
-    const plan = p.membership === 'premium' ? '🌟' : 'Free';
+    const plan = p.membership === 'premium' ? '🌟 Premium' : 'Free';
     listDiv.innerHTML += `
       <div class="history-item">
         <span>ID: ${shortId}...</span>
@@ -379,23 +416,87 @@ async function loadAdminUsers() {
   });
 }
 
-// User: Upgrade to Premium (Demo)
-async function upgradePremium() {
-    const msg = document.getElementById('premium-msg');
-    msg.style.color = 'blue';
-    msg.textContent = "Upgrading... (Demo)";
+// Admin loads pending submissions
+async function loadAdminSubmissions() {
+    const div = document.getElementById('admin-submissions');
+    div.innerHTML = 'Loading...';
     
-    // In a real app, you would process payment first!
-    const { error } = await supabaseClient.from('profiles').update({ membership: 'premium' }).eq('id', currentUser.id);
-    
+    // Get all pending tasks with user profiles and task details
+    const { data: pending, error } = await supabaseClient
+        .from('task_completions')
+        .select(`*, profiles(points, membership), tasks(title, points)`)
+        .eq('status', 'pending');
+        
     if(error) {
-        msg.style.color = 'red';
-        msg.textContent = "Error upgrading.";
-    } else {
-        msg.style.color = 'green';
-        msg.textContent = "Upgraded to Premium!";
-        loadUserData(); // Refresh screen
+        div.innerHTML = "Error loading: " + error.message;
+        return;
     }
+    
+    if(pending.length === 0) {
+        div.innerHTML = 'No pending submissions.';
+        return;
+    }
+    
+    div.innerHTML = '';
+    for (const item of pending) {
+        const userId = item.user_id.substring(0,6);
+        const taskTitle = item.tasks.title;
+        const points = item.points_earned;
+        
+        // Generate a secure, temporary link for the Admin to view the image
+        const { data: signedUrlData } = await supabaseClient.storage
+            .from('screenshots')
+            .createSignedUrl(item.screenshot_url, 60 * 60); // Link valid for 1 hour
+            
+        const imgLink = signedUrlData ? signedUrlData.signedUrl : '#';
+        
+        div.innerHTML += `
+            <div style="border:1px solid #e2e8f0; padding:10px; margin-bottom:10px; border-radius:8px; background:white;">
+                <p><b>User:</b> ${userId}...<br>
+                <b>Task:</b> ${taskTitle} (+${points} pts)</p>
+                <a href="${imgLink}" target="_blank" style="color:#3b82f6; font-size:14px; display:inline-block; margin-bottom:10px;">🔍 View Screenshot</a>
+                <div style="display:flex; gap:10px;">
+                    <button onclick="approveTask('${item.id}', '${item.user_id}', ${item.points_earned})" style="background:#10b981; padding:8px; margin:0; width:auto;">Approve</button>
+                    <button onclick="rejectTask('${item.id}')" style="background:#ef4444; padding:8px; margin:0; width:auto;">Reject</button>
+                </div>
+            </div>
+        `;
+    }
+}
+
+// Admin Approves Task
+async function approveTask(completionId, userId, points) {
+    if(!confirm("Are you sure you want to approve this task and give the user points?")) return;
+    
+    // 1. Update submission status to approved
+    await supabaseClient.from('task_completions').update({ status: 'approved' }).eq('id', completionId);
+    
+    // 2. Fetch user's current points
+    const { data: profile } = await supabaseClient.from('profiles').select('points').eq('id', userId).single();
+    
+    // 3. Add points to user
+    const newPoints = profile.points + points;
+    await supabaseClient.from('profiles').update({ points: newPoints }).eq('id', userId);
+    
+    alert("Approved! Points added to user.");
+    loadAdminSubmissions();
+    loadUserData();
+}
+
+// Admin Rejects Task
+async function rejectTask(completionId) {
+    if(!confirm("Are you sure you want to reject this submission?")) return;
+    
+    await supabaseClient.from('task_completions').update({ status: 'rejected' }).eq('id', completionId);
+    alert("Submission rejected.");
+    loadAdminSubmissions();
+    loadUserData();
+}
+
+function requestPremium() {
+    const msg = document.getElementById('premium-msg');
+    msg.style.color = '#b45309';
+    msg.textContent = "Payments are not connected yet. Please contact Admin to manually upgrade your account.";
 }
 </script>
 </body>
