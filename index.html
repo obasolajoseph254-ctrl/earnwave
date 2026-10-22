@@ -37,6 +37,10 @@ input, select, textarea{width:100%;padding:12px;margin:8px 0;border:1px solid #c
 .badge-approved{background:#10b981; color:white;}
 .badge-rejected{background:#ef4444; color:white;}
 .upload-box{display:none; margin-top:15px; padding:15px; background:#f8fafc; border:1px dashed #cbd5e1; border-radius:8px;}
+.admin-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 10px; background: white; }
+.admin-table th, .admin-table td { border: 1px solid #cbd5e1; padding: 8px; text-align: left; }
+.admin-table th { background: #f1f5f9; }
+.action-btn { padding: 4px 8px; font-size: 12px; width: auto; margin: 2px; }
 </style>
 </head>
 <body>
@@ -72,11 +76,12 @@ input, select, textarea{width:100%;padding:12px;margin:8px 0;border:1px solid #c
 <!-- ADMIN PANEL -->
 <div id="admin-panel" class="card admin-card hidden">
 <h3>🛡️ Admin Panel</h3>
-<p class="small">Create a new task.</p>
+<p class="small"><b>Create a new task:</b></p>
 <input type="text" id="admin-task-title" placeholder="Task Title">
 <input type="text" id="admin-task-desc" placeholder="Short Description">
 <input type="url" id="admin-task-link" placeholder="Task Link (https://...)">
-<input type="number" id="admin-task-points" placeholder="Points">
+<input type="number" id="admin-task-points" placeholder="Points (e.g. 50)">
+<input type="number" id="admin-task-limit" placeholder="Max Users Allowed (e.g. 100)">
 <select id="admin-task-type">
   <option value="free">Free Task</option>
   <option value="premium">Premium Task</option>
@@ -85,12 +90,16 @@ input, select, textarea{width:100%;padding:12px;margin:8px 0;border:1px solid #c
 <div id="admin-msg" class="small" style="margin-top:10px;"></div>
 
 <hr style="margin:20px 0;">
-<h4>👥 Registered Users</h4>
-<div id="admin-user-list" class="small">Loading...</div>
+<h4>📥 Pending Submissions (Review)</h4>
+<div id="admin-submissions" class="small" style="overflow-x:auto;">Loading...</div>
 
 <hr style="margin:20px 0;">
-<h4>📥 Task Submissions (Pending Approval)</h4>
-<div id="admin-submissions" class="small">Loading...</div>
+<h4>🛠️ Manage Published Tasks</h4>
+<div id="admin-manage-tasks" class="small" style="overflow-x:auto;">Loading...</div>
+
+<hr style="margin:20px 0;">
+<h4>👥 Registered Users</h4>
+<div id="admin-user-list" class="small" style="overflow-x:auto;">Loading...</div>
 </div>
 
 <div class="card">
@@ -157,6 +166,7 @@ function showDashboard() {
     document.getElementById('admin-panel').classList.remove('hidden');
     loadAdminUsers(); 
     loadAdminSubmissions();
+    loadAdminManageTasks();
   }
   loadUserData();
 }
@@ -243,6 +253,9 @@ async function loadUserData() {
   
   const { data: completedTasks } = await supabaseClient.from('task_completions').select('*').eq('user_id', currentUser.id).order('completed_at', { ascending: false });
   
+  // Get total approved/pending counts per task to check limits
+  const { data: allSubmissions } = await supabaseClient.from('task_completions').select('task_id, status').neq('status', 'rejected');
+  
   const tasksContainer = document.getElementById('tasks-container');
   tasksContainer.innerHTML = ''; 
   
@@ -254,6 +267,10 @@ async function loadUserData() {
     const submission = completedTasks.find(ct => ct.task_id === t.id);
     const isPremiumTask = t.task_type === 'premium';
     
+    // Count how many people have done this task
+    const taskSubmissionsCount = allSubmissions ? allSubmissions.filter(s => s.task_id === t.id).length : 0;
+    const limitReached = taskSubmissionsCount >= t.max_completions;
+    
     let buttonHTML = '';
     if(submission) {
         if(submission.status === 'pending') {
@@ -263,6 +280,8 @@ async function loadUserData() {
         } else {
             buttonHTML = `<button disabled style="background:#ef4444; opacity:0.8;">Rejected ❌</button>`;
         }
+    } else if (limitReached) {
+        buttonHTML = `<button disabled style="background:#64748b;">Limit Reached</button>`;
     } else if (isPremiumTask && userMembership !== 'premium') {
         buttonHTML = `<button onclick="alert('This is a Premium task. Please upgrade to unlock it.')" style="background:#f59e0b;">🔒 Locked</button>`;
     } else {
@@ -270,13 +289,13 @@ async function loadUserData() {
     }
 
     const badge = isPremiumTask ? '<span class="badge badge-premium">PREMIUM</span>' : '<span class="badge badge-free">FREE</span>';
+    const limitText = `<span class="small">(Slots: ${taskSubmissionsCount}/${t.max_completions})</span>`;
     
     const taskDiv = document.createElement('div');
     taskDiv.className = 'task';
     taskDiv.innerHTML = `
       <div style="flex:1;">
-        <b>${t.title}</b> ${badge}<p class="small">${t.description}</p>
-        <!-- Hidden Upload Box for this task -->
+        <b>${t.title}</b> ${badge} ${limitText}<p class="small">${t.description}</p>
         <div id="upload-${t.id}" class="upload-box">
             <p class="small" style="margin-top:0;">Upload a screenshot to prove you did this task:</p>
             <input type="file" id="file-${t.id}" accept="image/*">
@@ -314,13 +333,11 @@ async function loadUserData() {
   }
 }
 
-// User opens upload box
 function showUpload(taskId, link) {
     if(link) window.open(link, '_blank');
     document.getElementById('upload-' + taskId).style.display = 'block';
 }
 
-// User submits screenshot
 async function submitTask(taskId, pointsValue) {
     const fileInput = document.getElementById('file-' + taskId);
     if(fileInput.files.length === 0) {
@@ -332,7 +349,6 @@ async function submitTask(taskId, pointsValue) {
     const fileExt = file.name.split('.').pop();
     const fileName = `${currentUser.id}-${taskId}-${Date.now()}.${fileExt}`;
     
-    // 1. Upload to Supabase Storage
     const { data: uploadData, error: uploadError } = await supabaseClient.storage
         .from('screenshots')
         .upload(fileName, file);
@@ -342,10 +358,8 @@ async function submitTask(taskId, pointsValue) {
         return;
     }
 
-    // 2. Get the file path (we don't need a public URL since it's private)
     const filePath = uploadData.path;
 
-    // 3. Save submission to database
     const { error: dbError } = await supabaseClient.from('task_completions').insert([
         { user_id: currentUser.id, task_id: taskId, points_earned: pointsValue, status: 'pending', screenshot_url: filePath }
     ]);
@@ -363,6 +377,7 @@ async function createTask() {
   const desc = document.getElementById('admin-task-desc').value;
   const link = document.getElementById('admin-task-link').value;
   const points = document.getElementById('admin-task-points').value;
+  const limit = document.getElementById('admin-task-limit').value || 100;
   const type = document.getElementById('admin-task-type').value;
   const msg = document.getElementById('admin-msg');
 
@@ -376,7 +391,7 @@ async function createTask() {
   msg.textContent = "Publishing...";
 
   const { error } = await supabaseClient.from('tasks').insert([
-    { title: title, description: desc, task_link: link, points: parseInt(points), task_type: type }
+    { title: title, description: desc, task_link: link, points: parseInt(points), task_type: type, max_completions: parseInt(limit) }
   ]);
 
   if(error) {
@@ -389,39 +404,17 @@ async function createTask() {
     document.getElementById('admin-task-desc').value = '';
     document.getElementById('admin-task-link').value = '';
     document.getElementById('admin-task-points').value = '';
+    document.getElementById('admin-task-limit').value = '';
     loadUserData();
+    loadAdminManageTasks();
   }
 }
 
-async function loadAdminUsers() {
-  const listDiv = document.getElementById('admin-user-list');
-  const { data: profiles } = await supabaseClient.from('profiles').select('*');
-  
-  if(!profiles || profiles.length === 0) {
-    listDiv.innerHTML = 'No users found.';
-    return;
-  }
-
-  listDiv.innerHTML = '';
-  profiles.forEach(p => {
-    const shortId = p.id.substring(0, 6); 
-    const plan = p.membership === 'premium' ? '🌟 Premium' : 'Free';
-    listDiv.innerHTML += `
-      <div class="history-item">
-        <span>ID: ${shortId}...</span>
-        <span>${plan}</span>
-        <span style="font-weight:bold;">${p.points} pts</span>
-      </div>
-    `;
-  });
-}
-
-// Admin loads pending submissions
+// ADMIN: Load Pending Submissions with Approve/Reject
 async function loadAdminSubmissions() {
     const div = document.getElementById('admin-submissions');
     div.innerHTML = 'Loading...';
     
-    // Get all pending tasks with user profiles and task details
     const { data: pending, error } = await supabaseClient
         .from('task_completions')
         .select(`*, profiles(points, membership), tasks(title, points)`)
@@ -437,44 +430,82 @@ async function loadAdminSubmissions() {
         return;
     }
     
-    div.innerHTML = '';
+    let html = `<table class="admin-table">
+        <tr><th>User ID</th><th>Task</th><th>Points</th><th>Action</th></tr>`;
+        
     for (const item of pending) {
         const userId = item.user_id.substring(0,6);
         const taskTitle = item.tasks.title;
         const points = item.points_earned;
         
-        // Generate a secure, temporary link for the Admin to view the image
         const { data: signedUrlData } = await supabaseClient.storage
             .from('screenshots')
-            .createSignedUrl(item.screenshot_url, 60 * 60); // Link valid for 1 hour
+            .createSignedUrl(item.screenshot_url, 60 * 60);
             
         const imgLink = signedUrlData ? signedUrlData.signedUrl : '#';
         
-        div.innerHTML += `
-            <div style="border:1px solid #e2e8f0; padding:10px; margin-bottom:10px; border-radius:8px; background:white;">
-                <p><b>User:</b> ${userId}...<br>
-                <b>Task:</b> ${taskTitle} (+${points} pts)</p>
-                <a href="${imgLink}" target="_blank" style="color:#3b82f6; font-size:14px; display:inline-block; margin-bottom:10px;">🔍 View Screenshot</a>
-                <div style="display:flex; gap:10px;">
-                    <button onclick="approveTask('${item.id}', '${item.user_id}', ${item.points_earned})" style="background:#10b981; padding:8px; margin:0; width:auto;">Approve</button>
-                    <button onclick="rejectTask('${item.id}')" style="background:#ef4444; padding:8px; margin:0; width:auto;">Reject</button>
-                </div>
-            </div>
+        html += `
+            <tr>
+                <td>${userId}...</td>
+                <td><a href="${imgLink}" target="_blank" style="color:#3b82f6;">🔍 View SS</a><br>${taskTitle}</td>
+                <td>+${points}</td>
+                <td>
+                    <button class="action-btn" onclick="approveTask('${item.id}', '${item.user_id}', ${item.points_earned})" style="background:#10b981;">✅ Yes</button>
+                    <button class="action-btn" onclick="rejectTask('${item.id}')" style="background:#ef4444;">❌ No</button>
+                </td>
+            </tr>
         `;
+    }
+    html += `</table>`;
+    div.innerHTML = html;
+}
+
+// ADMIN: Load All Tasks for Management (Delete)
+async function loadAdminManageTasks() {
+    const div = document.getElementById('admin-manage-tasks');
+    const { data: tasks } = await supabaseClient.from('tasks').select('*').order('created_at', { ascending: false });
+    
+    if(!tasks || tasks.length === 0) {
+        div.innerHTML = 'No tasks created yet.';
+        return;
+    }
+    
+    let html = `<table class="admin-table">
+        <tr><th>Task Title</th><th>Points</th><th>Limit</th><th>Action</th></tr>`;
+        
+    tasks.forEach(t => {
+        html += `
+            <tr>
+                <td>${t.title}</td>
+                <td>${t.points}</td>
+                <td>${t.max_completions}</td>
+                <td><button class="action-btn" onclick="deleteTask('${t.id}')" style="background:#ef4444;">Delete</button></td>
+            </tr>
+        `;
+    });
+    html += `</table>`;
+    div.innerHTML = html;
+}
+
+// ADMIN: Delete Task
+async function deleteTask(taskId) {
+    if(!confirm("Are you sure you want to delete this task? Users will no longer see it.")) return;
+    const { error } = await supabaseClient.from('tasks').delete().eq('id', taskId);
+    if(error) alert("Error deleting: " + error.message);
+    else {
+        alert("Task deleted.");
+        loadAdminManageTasks();
+        loadUserData();
     }
 }
 
-// Admin Approves Task
+// ADMIN: Approve Task
 async function approveTask(completionId, userId, points) {
-    if(!confirm("Are you sure you want to approve this task and give the user points?")) return;
+    if(!confirm("Approve this submission and give points?")) return;
     
-    // 1. Update submission status to approved
     await supabaseClient.from('task_completions').update({ status: 'approved' }).eq('id', completionId);
     
-    // 2. Fetch user's current points
     const { data: profile } = await supabaseClient.from('profiles').select('points').eq('id', userId).single();
-    
-    // 3. Add points to user
     const newPoints = profile.points + points;
     await supabaseClient.from('profiles').update({ points: newPoints }).eq('id', userId);
     
@@ -483,14 +514,33 @@ async function approveTask(completionId, userId, points) {
     loadUserData();
 }
 
-// Admin Rejects Task
+// ADMIN: Reject Task
 async function rejectTask(completionId) {
-    if(!confirm("Are you sure you want to reject this submission?")) return;
-    
+    if(!confirm("Reject this submission?")) return;
     await supabaseClient.from('task_completions').update({ status: 'rejected' }).eq('id', completionId);
     alert("Submission rejected.");
     loadAdminSubmissions();
     loadUserData();
+}
+
+async function loadAdminUsers() {
+  const listDiv = document.getElementById('admin-user-list');
+  const { data: profiles } = await supabaseClient.from('profiles').select('*');
+  
+  if(!profiles || profiles.length === 0) {
+    listDiv.innerHTML = 'No users found.';
+    return;
+  }
+
+  let html = `<table class="admin-table">
+    <tr><th>User ID</th><th>Plan</th><th>Points</th></tr>`;
+  profiles.forEach(p => {
+    const shortId = p.id.substring(0, 6); 
+    const plan = p.membership === 'premium' ? '🌟 Premium' : 'Free';
+    html += `<tr><td>${shortId}...</td><td>${plan}</td><td>${p.points} pts</td></tr>`;
+  });
+  html += `</table>`;
+  listDiv.innerHTML = html;
 }
 
 function requestPremium() {
