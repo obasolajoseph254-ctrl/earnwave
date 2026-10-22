@@ -253,7 +253,6 @@ async function loadUserData() {
   
   const { data: completedTasks } = await supabaseClient.from('task_completions').select('*').eq('user_id', currentUser.id).order('completed_at', { ascending: false });
   
-  // Get total approved/pending counts per task to check limits
   const { data: allSubmissions } = await supabaseClient.from('task_completions').select('task_id, status').neq('status', 'rejected');
   
   const tasksContainer = document.getElementById('tasks-container');
@@ -267,7 +266,6 @@ async function loadUserData() {
     const submission = completedTasks.find(ct => ct.task_id === t.id);
     const isPremiumTask = t.task_type === 'premium';
     
-    // Count how many people have done this task
     const taskSubmissionsCount = allSubmissions ? allSubmissions.filter(s => s.task_id === t.id).length : 0;
     const limitReached = taskSubmissionsCount >= t.max_completions;
     
@@ -410,57 +408,61 @@ async function createTask() {
   }
 }
 
-// ADMIN: Load Pending Submissions with Approve/Reject
+// Safe Admin Submissions Loader
 async function loadAdminSubmissions() {
     const div = document.getElementById('admin-submissions');
-    div.innerHTML = 'Loading...';
     
-    const { data: pending, error } = await supabaseClient
-        .from('task_completions')
-        .select(`*, profiles(points, membership), tasks(title, points)`)
-        .eq('status', 'pending');
-        
-    if(error) {
-        div.innerHTML = "Error loading: " + error.message;
-        return;
-    }
-    
-    if(pending.length === 0) {
-        div.innerHTML = 'No pending submissions.';
-        return;
-    }
-    
-    let html = `<table class="admin-table">
-        <tr><th>User ID</th><th>Task</th><th>Points</th><th>Action</th></tr>`;
-        
-    for (const item of pending) {
-        const userId = item.user_id.substring(0,6);
-        const taskTitle = item.tasks.title;
-        const points = item.points_earned;
-        
-        const { data: signedUrlData } = await supabaseClient.storage
-            .from('screenshots')
-            .createSignedUrl(item.screenshot_url, 60 * 60);
+    try {
+        const { data: pending, error } = await supabaseClient
+            .from('task_completions')
+            .select('*')
+            .eq('status', 'pending');
             
-        const imgLink = signedUrlData ? signedUrlData.signedUrl : '#';
+        if(error) throw error;
         
-        html += `
-            <tr>
-                <td>${userId}...</td>
-                <td><a href="${imgLink}" target="_blank" style="color:#3b82f6;">🔍 View SS</a><br>${taskTitle}</td>
-                <td>+${points}</td>
-                <td>
-                    <button class="action-btn" onclick="approveTask('${item.id}', '${item.user_id}', ${item.points_earned})" style="background:#10b981;">✅ Yes</button>
-                    <button class="action-btn" onclick="rejectTask('${item.id}')" style="background:#ef4444;">❌ No</button>
-                </td>
-            </tr>
-        `;
+        if(!pending || pending.length === 0) {
+            div.innerHTML = '<p style="color:green;">No pending submissions found.</p>';
+            return;
+        }
+        
+        let html = `<table class="admin-table">
+            <tr><th>User ID</th><th>Task ID</th><th>Points</th><th>Action</th></tr>`;
+            
+        for (const item of pending) {
+            const userId = item.user_id ? item.user_id.substring(0,6) : 'Unknown';
+            const taskId = item.task_id ? item.task_id.substring(0,6) : 'Unknown';
+            const points = item.points_earned;
+            
+            let imgLink = '#';
+            if(item.screenshot_url) {
+                try {
+                    const { data: signedUrlData } = await supabaseClient.storage
+                        .from('screenshots')
+                        .createSignedUrl(item.screenshot_url, 60 * 60);
+                    if(signedUrlData) imgLink = signedUrlData.signedUrl;
+                } catch (e) { console.log(e); }
+            }
+            
+            html += `
+                <tr>
+                    <td>${userId}...</td>
+                    <td>${taskId}...</td>
+                    <td>+${points}</td>
+                    <td>
+                        ${imgLink !== '#' ? `<a href="${imgLink}" target="_blank" style="color:#3b82f6; display:block; margin-bottom:5px;">🔍 View SS</a>` : '<span class="small">No SS</span>'}
+                        <button class="action-btn" onclick="approveTask('${item.id}', '${item.user_id}', ${item.points_earned})" style="background:#10b981;">✅ Yes</button>
+                        <button class="action-btn" onclick="rejectTask('${item.id}')" style="background:#ef4444;">❌ No</button>
+                    </td>
+                </tr>
+            `;
+        }
+        html += `</table>`;
+        div.innerHTML = html;
+    } catch(err) {
+        div.innerHTML = `<p style="color:red;">Error: ${err.message}</p>`;
     }
-    html += `</table>`;
-    div.innerHTML = html;
 }
 
-// ADMIN: Load All Tasks for Management (Delete)
 async function loadAdminManageTasks() {
     const div = document.getElementById('admin-manage-tasks');
     const { data: tasks } = await supabaseClient.from('tasks').select('*').order('created_at', { ascending: false });
@@ -487,7 +489,6 @@ async function loadAdminManageTasks() {
     div.innerHTML = html;
 }
 
-// ADMIN: Delete Task
 async function deleteTask(taskId) {
     if(!confirm("Are you sure you want to delete this task? Users will no longer see it.")) return;
     const { error } = await supabaseClient.from('tasks').delete().eq('id', taskId);
@@ -499,7 +500,6 @@ async function deleteTask(taskId) {
     }
 }
 
-// ADMIN: Approve Task
 async function approveTask(completionId, userId, points) {
     if(!confirm("Approve this submission and give points?")) return;
     
@@ -514,7 +514,6 @@ async function approveTask(completionId, userId, points) {
     loadUserData();
 }
 
-// ADMIN: Reject Task
 async function rejectTask(completionId) {
     if(!confirm("Reject this submission?")) return;
     await supabaseClient.from('task_completions').update({ status: 'rejected' }).eq('id', completionId);
