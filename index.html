@@ -254,7 +254,6 @@ async function loadUserData() {
   
   const { data: completedTasks } = await supabaseClient.from('task_completions').select('*').eq('user_id', currentUser.id).order('completed_at', { ascending: false });
   
-  // Get ALL submissions (not rejected) to count how many people did each task
   const { data: allSubmissions } = await supabaseClient.from('task_completions').select('task_id, status').neq('status', 'rejected');
   
   const tasksContainer = document.getElementById('tasks-container');
@@ -268,7 +267,6 @@ async function loadUserData() {
     const submission = completedTasks.find(ct => String(ct.task_id) === String(t.id));
     const isPremiumTask = t.task_type === 'premium';
     
-    // Count how many people have done this task
     const taskSubmissionsCount = allSubmissions ? allSubmissions.filter(s => String(s.task_id) === String(t.id)).length : 0;
     const limitReached = taskSubmissionsCount >= t.max_completions;
     
